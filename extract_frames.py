@@ -1,7 +1,7 @@
 import cv2
 import os
 
-cap = cv2.VideoCapture('badapple.mp4')
+cap = cv2.VideoCapture('birds.mp4')
 fps = cap.get(cv2.CAP_PROP_FPS)
 interval = int(fps / 10) if fps > 10 else 1
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const sharp = require('sharp');
 const path = require('path');
+const fs = require('fs');
 const { execSync, spawn } = require('child_process');
 const os = require('os');
 
@@ -19,14 +20,35 @@ const app = express();
 const port = 3001;
 
 app.get('/', async (req, res) => {
+    const anim = req.query.anim;
+    
+    // If amount query is present, return frame count for the animation
+    if (req.query.amount !== undefined) {
+        if (!anim) {
+            return res.status(400).json({ error: 'anim parameter required when using amount' });
+        }
+        const imagesDir = path.join(__dirname, 'anims', anim, 'images');
+        try {
+            const files = fs.readdirSync(imagesDir).filter(file => file.endsWith('.png'));
+            const frameCount = files.length;
+            return res.json({ frames: frameCount });
+        } catch (err) {
+            return res.status(404).json({ error: 'Animation not found' });
+        }
+    }
+    
+    // Original logic for frame data
     const minframe = parseInt(req.query.minframe) || 1;
     const maxframe = parseInt(req.query.maxframe) || 10;
+    const imagesDir = anim 
+        ? path.join(__dirname, 'anims', anim, 'images')
+        : path.join(__dirname, 'images');
     const frames = [];
 
     for (let i = minframe; i <= maxframe; i++) {
-        console.log(`Reading image ${i}`);
+        console.log(`Reading image ${i} from ${imagesDir}`);
         try {
-            const imagePath = path.join(__dirname, 'images', `${i}.png`);
+            const imagePath = path.join(imagesDir, `${i}.png`);
             const image = sharp(imagePath);
             const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
             const pixels = [];
