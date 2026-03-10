@@ -3,7 +3,7 @@ services:
     name: badapple-api
     env: node
     plan: free
-    buildCommand: pip install -r requirements.txt && npm install
+    buildCommand: which ffmpeg || (apt-get update && apt-get install -y ffmpeg) || echo "ffmpeg install failed, will use fallback"; pip install -r requirements.txt && npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV

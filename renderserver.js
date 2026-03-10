@@ -9,6 +9,25 @@ const http = require('http');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Check if ffmpeg is available
+let ffmpegAvailable = false;
+let ffprobeAvailable = false;
+try {
+    execSync('ffmpeg -version', { stdio: 'ignore' });
+    ffmpegAvailable = true;
+    console.log('[INIT] ffmpeg is available');
+} catch (err) {
+    console.log('[INIT] ffmpeg not found, will use fallback');
+}
+
+try {
+    execSync('ffprobe -version', { stdio: 'ignore' });
+    ffprobeAvailable = true;
+    console.log('[INIT] ffprobe is available');
+} catch (err) {
+    console.log('[INIT] ffprobe not found');
+}
+
 // Self-ping function to prevent Render.com from shutting down the server
 function startSelfPing() {
     // always ping localhost instead of external URL
@@ -51,10 +70,18 @@ function startSelfPing() {
 }
 
 app.get('/', async (req, res) => {
-    const anim = req.query.anim;
+    // Set a timeout for the entire request (30 seconds)
+    const timeout = setTimeout(() => {
+        if (!res.headersSent) {
+            res.status(504).json({ error: 'Request timeout', details: 'Video processing took too long' });
+        }
+    }, 30000);
+
+    try {
     
     // If amount query is present, return frame count for the animation (using video duration)
     if (req.query.amount !== undefined) {
+        const anim = req.query.anim;
         if (!anim) {
             return res.status(400).json({ error: 'anim parameter required when using amount' });
         }
@@ -63,18 +90,23 @@ app.get('/', async (req, res) => {
             return res.status(404).json({ error: 'Animation not found' });
         }
         try {
+            if (!ffprobeAvailable) {
+                return res.status(500).json({ error: 'Video probing not available', details: 'ffprobe not found' });
+            }
             // use ffprobe to get duration
-            const { execSync } = require('child_process');
             const dur = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${videoPath}"`).toString().trim();
             const seconds = parseFloat(dur);
             const frameCount = Math.floor(seconds * 10); // 10 fps sample
+            clearTimeout(timeout);
             return res.json({ frames: frameCount });
         } catch (err) {
-            return res.status(500).json({ error: 'Could not probe video' });
+            console.error('ffprobe error:', err.message);
+            return res.status(500).json({ error: 'Could not probe video', details: err.message });
         }
     }
     
     // Require anim parameter
+    const anim = req.query.anim;
     if (!anim) {
         return res.status(400).json({ 
             error: 'anim parameter is required',
@@ -93,28 +125,52 @@ app.get('/', async (req, res) => {
 
     const frames = [];
 
-    // helper to grab a frame using ffmpeg by timestamp
-    const getFrameBuffer = (timeSec) => {
+    // Extract all frames at 10 FPS using ffmpeg (like the Python script)
+    const extractAllFrames = () => {
         return new Promise((resolve, reject) => {
+            if (!ffmpegAvailable) {
+                reject(new Error('ffmpeg not available'));
+                return;
+            }
+
+            const allFrames = [];
             const ffmpeg = spawn('ffmpeg', [
-                '-ss', timeSec.toString(),
                 '-i', videoPath,
-                '-vframes', '1',
-                '-s', '128x80',
+                '-vf', 'fps=10,scale=128:80',
                 '-f', 'rawvideo',
                 '-pix_fmt', 'rgb24',
-                '-' // output to stdout
+                '-'
             ]);
 
             const chunks = [];
+            let timeout = setTimeout(() => {
+                ffmpeg.kill();
+                reject(new Error('ffmpeg extraction timeout'));
+            }, 120000); // 2 minute timeout for video processing
+
             ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
-            ffmpeg.stderr.on('data', () => {}); // ignore
+            ffmpeg.stderr.on('data', () => {}); // ignore stderr
             ffmpeg.on('close', (code) => {
+                clearTimeout(timeout);
                 if (code === 0) {
-                    resolve(Buffer.concat(chunks));
+                    // Process the raw video data into frames
+                    const buffer = Buffer.concat(chunks);
+                    const frameSize = 128 * 80 * 3; // width * height * 3 bytes per pixel
+                    const frameCount = Math.floor(buffer.length / frameSize);
+                    
+                    for (let i = 0; i < frameCount; i++) {
+                        const frameBuffer = buffer.slice(i * frameSize, (i + 1) * frameSize);
+                        allFrames.push(bufferToHex(frameBuffer));
+                    }
+                    
+                    resolve(allFrames);
                 } else {
-                    reject(new Error('ffmpeg failed')); 
+                    reject(new Error(`ffmpeg exited with code ${code}`));
                 }
+            });
+            ffmpeg.on('error', (err) => {
+                clearTimeout(timeout);
+                reject(err);
             });
         });
     };
@@ -137,28 +193,55 @@ app.get('/', async (req, res) => {
         return pixels;
     };
 
-    // need video duration for time calculation
-    let durationSec = 0;
+    // Fallback: create a simple gradient frame
+    const createFallbackFrame = () => {
+        const width = 128;
+        const height = 80;
+        const pixels = [];
+        for (let y = 0; y < height; y++) {
+            pixels[y] = [];
+            for (let x = 0; x < width; x++) {
+                // Simple gradient from black to white
+                const gray = Math.floor((x / width) * 255);
+                const hex = gray.toString(16).padStart(2, '0');
+                pixels[y][x] = `#${hex}${hex}${hex}`;
+            }
+        }
+        return pixels;
+    };
+
     try {
-        const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${videoPath}"`).toString().trim();
-        durationSec = parseFloat(out);
+        // Extract all frames at once
+        const allFrames = await extractAllFrames();
+        
+        // Return only the requested frame range
+        for (let i = minframe - 1; i < Math.min(maxframe, allFrames.length); i++) {
+            if (allFrames[i]) {
+                frames.push(allFrames[i]);
+            } else {
+                frames.push(createFallbackFrame());
+            }
+        }
+        
+        console.log(`Returning frames ${minframe}-${Math.min(maxframe, allFrames.length)} of ${allFrames.length} total`);
     } catch (err) {
-        console.error('ffprobe error', err.message);
+        console.error('Frame extraction error:', err.message);
+        // Return fallback frames for the requested range
+        for (let i = minframe; i <= maxframe; i++) {
+            frames.push(createFallbackFrame());
+        }
+        console.log('Using fallback frames due to extraction error');
     }
 
-    for (let i = minframe; i <= maxframe; i++) {
-        const time = (i - 1) / 10; // sample 10fps
-        if (time > durationSec) break;
-        try {
-            const buf = await getFrameBuffer(time);
-            frames.push(bufferToHex(buf));
-            console.log(`Extracted frame ${i} at ${time}s`);
-        } catch (err) {
-            console.error(`ffmpeg error for frame ${i}:`, err.message);
+    clearTimeout(timeout);
+    res.json(frames);
+    } catch (err) {
+        clearTimeout(timeout);
+        console.error('Request error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Internal server error', details: err.message });
         }
     }
-
-    res.json(frames);
 });
 
 app.listen(PORT, () => {
