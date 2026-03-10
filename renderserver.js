@@ -11,7 +11,13 @@ const PORT = process.env.PORT || 3001;
 
 // Self-ping function to prevent Render.com from shutting down the server
 function startSelfPing() {
-    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    const baseUrl = process.env.RENDER_EXTERNAL_URL;
+    
+    // Only ping if we have a Render.com URL
+    if (!baseUrl) {
+        console.log(`[PING] Skipping self-ping (not running on Render.com)`);
+        return;
+    }
     
     setInterval(() => {
         // Random interval between 1-5 minutes
@@ -71,22 +77,22 @@ app.get('/', async (req, res) => {
         }
     }
     
+    // Require anim parameter
+    if (!anim) {
+        return res.status(400).json({ 
+            error: 'anim parameter is required',
+            hint: 'Usage: /?minframe=1&maxframe=10&anim=animationname'
+        });
+    }
+    
     // Original logic for frame data
     const minframe = parseInt(req.query.minframe) || 1;
     const maxframe = parseInt(req.query.maxframe) || 10;
-    const imagesDir = anim 
-        ? path.join(__dirname, 'anims', anim, 'images')
-        : path.join(__dirname, 'images');
+    const imagesDir = path.join(__dirname, 'anims', anim, 'images');
     
     // Check if images directory exists
     if (!fs.existsSync(imagesDir)) {
         console.warn(`[WARN] Images directory not found: ${imagesDir}`);
-        if (!anim) {
-            return res.status(404).json({ 
-                error: 'No animations found. Please add videos to the "videos/" folder and rebuild, or use the "?anim=name" parameter to access a specific animation.',
-                hint: 'Available animations can be found in the "anims/" folder'
-            });
-        }
         return res.status(404).json({ error: `Animation "${anim}" not found` });
     }
     
