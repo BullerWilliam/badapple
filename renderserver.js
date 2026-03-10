@@ -2,7 +2,7 @@ const express = require('express');
 const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const os = require('os');
 const http = require('http');
 
@@ -53,18 +53,24 @@ function startSelfPing() {
 app.get('/', async (req, res) => {
     const anim = req.query.anim;
     
-    // If amount query is present, return frame count for the animation
+    // If amount query is present, return frame count for the animation (using video duration)
     if (req.query.amount !== undefined) {
         if (!anim) {
             return res.status(400).json({ error: 'anim parameter required when using amount' });
         }
-        const imagesDir = path.join(__dirname, 'anims', anim, 'images');
+        const videoPath = path.join(__dirname, 'videos', `${anim}.mp4`);
+        if (!fs.existsSync(videoPath)) {
+            return res.status(404).json({ error: 'Animation not found' });
+        }
         try {
-            const files = fs.readdirSync(imagesDir).filter(file => file.endsWith('.png'));
-            const frameCount = files.length;
+            // use ffprobe to get duration
+            const { execSync } = require('child_process');
+            const dur = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${videoPath}"`).toString().trim();
+            const seconds = parseFloat(dur);
+            const frameCount = Math.floor(seconds * 10); // 10 fps sample
             return res.json({ frames: frameCount });
         } catch (err) {
-            return res.status(404).json({ error: 'Animation not found' });
+            return res.status(500).json({ error: 'Could not probe video' });
         }
     }
     
@@ -75,44 +81,83 @@ app.get('/', async (req, res) => {
             hint: 'Usage: /?minframe=1&maxframe=10&anim=animationname'
         });
     }
-    
-    // Original logic for frame data
-    const minframe = parseInt(req.query.minframe) || 1;
-    const maxframe = parseInt(req.query.maxframe) || 10;
-    const imagesDir = path.join(__dirname, 'anims', anim, 'images');
-    
-    // Check if images directory exists
-    if (!fs.existsSync(imagesDir)) {
-        console.warn(`[WARN] Images directory not found: ${imagesDir}`);
+
+    const videoPath = path.join(__dirname, 'videos', `${anim}.mp4`);
+    if (!fs.existsSync(videoPath)) {
         return res.status(404).json({ error: `Animation "${anim}" not found` });
     }
-    
+
+    // parse requested frame range
+    const minframe = parseInt(req.query.minframe) || 1;
+    const maxframe = parseInt(req.query.maxframe) || 10;
+
     const frames = [];
 
-    for (let i = minframe; i <= maxframe; i++) {
-        console.log(`Reading image ${i} from ${imagesDir}`);
-        try {
-            const imagePath = path.join(imagesDir, `${i}.png`);
-            const image = sharp(imagePath);
-            const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
-            const pixels = [];
-            for (let y = 0; y < info.height; y++) {
-                pixels[y] = [];
-                for (let x = 0; x < info.width; x++) {
-                    const idx = (y * info.width + x) * 3;
-                    const r = data[idx].toString(16).padStart(2, '0');
-                    const g = data[idx + 1].toString(16).padStart(2, '0');
-                    const b = data[idx + 2].toString(16).padStart(2, '0');
-                    pixels[y][x] = `#${r}${g}${b}`;
+    // helper to grab a frame using ffmpeg by timestamp
+    const getFrameBuffer = (timeSec) => {
+        return new Promise((resolve, reject) => {
+            const ffmpeg = spawn('ffmpeg', [
+                '-ss', timeSec.toString(),
+                '-i', videoPath,
+                '-vframes', '1',
+                '-s', '128x80',
+                '-f', 'rawvideo',
+                '-pix_fmt', 'rgb24',
+                '-' // output to stdout
+            ]);
+
+            const chunks = [];
+            ffmpeg.stdout.on('data', (chunk) => chunks.push(chunk));
+            ffmpeg.stderr.on('data', () => {}); // ignore
+            ffmpeg.on('close', (code) => {
+                if (code === 0) {
+                    resolve(Buffer.concat(chunks));
+                } else {
+                    reject(new Error('ffmpeg failed')); 
                 }
+            });
+        });
+    };
+
+    // function to convert raw rgb buffer to hex grid
+    const bufferToHex = (buf) => {
+        const width = 128;
+        const height = 80;
+        const pixels = [];
+        for (let y = 0; y < height; y++) {
+            pixels[y] = [];
+            for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 3;
+                const r = buf[idx].toString(16).padStart(2,'0');
+                const g = buf[idx+1].toString(16).padStart(2,'0');
+                const b = buf[idx+2].toString(16).padStart(2,'0');
+                pixels[y][x] = `#${r}${g}${b}`;
             }
-            frames.push(pixels);
-            console.log(`Pushed frame ${i}`);
+        }
+        return pixels;
+    };
+
+    // need video duration for time calculation
+    let durationSec = 0;
+    try {
+        const out = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${videoPath}"`).toString().trim();
+        durationSec = parseFloat(out);
+    } catch (err) {
+        console.error('ffprobe error', err.message);
+    }
+
+    for (let i = minframe; i <= maxframe; i++) {
+        const time = (i - 1) / 10; // sample 10fps
+        if (time > durationSec) break;
+        try {
+            const buf = await getFrameBuffer(time);
+            frames.push(bufferToHex(buf));
+            console.log(`Extracted frame ${i} at ${time}s`);
         } catch (err) {
-            console.error(`Error reading image ${i}.png:`, err.message);
-            // Skip frames that don't exist
+            console.error(`ffmpeg error for frame ${i}:`, err.message);
         }
     }
+
     res.json(frames);
 });
 
@@ -130,7 +175,7 @@ app.listen(PORT, () => {
             });
             if (animations.length > 0) {
                 console.log(`[${new Date().toISOString()}] Available animations: ${animations.join(', ')}`);
-                console.log(`[${new Date().toISOString()}] Usage: ${baseUrl}?minframe=1&maxframe=10&anim=${animations[0]}`);
+                console.log(`[${new Date().toISOString()}] Usage: http://localhost:${PORT}?minframe=1&maxframe=10&anim=${animations[0]}`);
             } else {
                 console.log(`[${new Date().toISOString()}] No animations found. Add videos to the 'videos/' folder and rebuild.`);
             }
