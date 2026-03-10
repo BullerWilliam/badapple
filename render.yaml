@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: badapple-api
+    env: node
+    plan: free
+    buildCommand: bash -c "pip install -r requirements.txt && npm install && python build_animations.py"
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
