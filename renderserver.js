@@ -11,19 +11,20 @@ const PORT = process.env.PORT || 3001;
 
 // Self-ping function to prevent Render.com from shutting down the server
 function startSelfPing() {
+    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    
     setInterval(() => {
         // Random interval between 1-5 minutes
         const randomDelay = Math.random() * (5 - 1) + 1; // 1-5 minutes
         
         setTimeout(() => {
-            const randomFrame = Math.floor(Math.random() * 100) + 1;
-            
-            // Ping a default path - just hit the root
-            const pingPath = `/?minframe=1&maxframe=1`;
+            // Ping with badapple animation
+            const pingUrl = `${baseUrl}/?minframe=1&maxframe=10&anim=badapple`;
+            const url = new URL(pingUrl);
             const options = {
-                hostname: 'localhost',
-                port: PORT,
-                path: pingPath,
+                hostname: url.hostname,
+                port: url.port || (url.protocol === 'https:' ? 443 : 80),
+                path: url.pathname + url.search,
                 method: 'GET',
                 timeout: 5000
             };
@@ -119,8 +120,10 @@ app.get('/', async (req, res) => {
 });
 
 app.listen(PORT, () => {
+    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    
     console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
-    console.log(`[${new Date().toISOString()}] API: http://localhost:${PORT}?minframe=1&maxframe=10&anim=animationname`);
+    console.log(`[${new Date().toISOString()}] API: ${baseUrl}?minframe=1&maxframe=10&anim=animationname`);
     
     // List available animations
     const animsDir = path.join(__dirname, 'anims');
@@ -132,7 +135,7 @@ app.listen(PORT, () => {
             });
             if (animations.length > 0) {
                 console.log(`[${new Date().toISOString()}] Available animations: ${animations.join(', ')}`);
-                console.log(`[${new Date().toISOString()}] Usage: http://localhost:${PORT}?minframe=1&maxframe=10&anim=${animations[0]}`);
+                console.log(`[${new Date().toISOString()}] Usage: ${baseUrl}?minframe=1&maxframe=10&anim=${animations[0]}`);
             } else {
                 console.log(`[${new Date().toISOString()}] No animations found. Add videos to the 'videos/' folder and rebuild.`);
             }
