@@ -11,26 +11,17 @@ const PORT = process.env.PORT || 3001;
 
 // Self-ping function to prevent Render.com from shutting down the server
 function startSelfPing() {
-    const baseUrl = process.env.RENDER_EXTERNAL_URL;
-    
-    // Only ping if we have a Render.com URL
-    if (!baseUrl) {
-        console.log(`[PING] Skipping self-ping (not running on Render.com)`);
-        return;
-    }
-    
+    // always ping localhost instead of external URL
     setInterval(() => {
         // Random interval between 1-5 minutes
         const randomDelay = Math.random() * (5 - 1) + 1; // 1-5 minutes
         
         setTimeout(() => {
-            // Ping with badapple animation
-            const pingUrl = `${baseUrl}/?minframe=1&maxframe=10&anim=badapple`;
-            const url = new URL(pingUrl);
+            // Ping local root path
             const options = {
-                hostname: url.hostname,
-                port: url.port || (url.protocol === 'https:' ? 443 : 80),
-                path: url.pathname + url.search,
+                hostname: 'localhost',
+                port: PORT,
+                path: '/?minframe=1&maxframe=10&anim=badapple',
                 method: 'GET',
                 timeout: 5000
             };
@@ -126,10 +117,8 @@ app.get('/', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    const baseUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
-    
     console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
-    console.log(`[${new Date().toISOString()}] API: ${baseUrl}?minframe=1&maxframe=10&anim=animationname`);
+    console.log(`[${new Date().toISOString()}] API: http://localhost:${PORT}?minframe=1&maxframe=10&anim=animationname`);
     
     // List available animations
     const animsDir = path.join(__dirname, 'anims');
