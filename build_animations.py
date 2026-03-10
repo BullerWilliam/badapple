@@ -9,6 +9,10 @@ anims_dir = 'anims'
 # Create anims directory if it doesn't exist
 os.makedirs(anims_dir, exist_ok=True)
 
+# Create default images folder for backwards compatibility
+default_images_dir = 'images'
+os.makedirs(default_images_dir, exist_ok=True)
+
 # Check if videos directory exists
 if not os.path.exists(videos_dir):
     print(f"[INFO] '{videos_dir}' directory not found. Creating it...")
