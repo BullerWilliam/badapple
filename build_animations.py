@@ -43,8 +43,8 @@ for video_file in video_files:
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS)
     
-    # Calculate frame interval (extract 5 FPS)
-    frame_interval = int(fps / 5) if fps > 5 else 1
+    # Calculate frame interval (extract 10 FPS)
+    frame_interval = int(fps / 10) if fps > 10 else 1
     
     frame_count = 0
     image_count = 1
@@ -55,8 +55,8 @@ for video_file in video_files:
             break
         
         if frame_count % frame_interval == 0:
-            # Resize to 64x40
-            frame = cv2.resize(frame, (64, 40))
+            # Resize to 128x80
+            frame = cv2.resize(frame, (128, 80))
             cv2.imwrite(os.path.join(images_dir, f'{image_count}.png'), frame)
             image_count += 1
         
