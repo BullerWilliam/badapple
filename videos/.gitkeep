@@ -1,0 +1,37 @@
+# Add your .mp4 video files here
+
+This folder is for source video files that will be automatically extracted into animations.
+
+## Supported formats
+
+- `.mp4` (H.264 video codec recommended)
+- All files ending in `.mp4` will be processed during build
+
+## Examples
+
+```
+videos/
+├── animation1.mp4
+├── animation2.mp4
+└── my-video.mp4
+```
+
+After uploading videos to this folder and deploying, they will be automatically extracted to:
+- `anims/animation1/images/`
+- `anims/animation2/images/`
+- `anims/my-video/images/`
+
+## Access via API
+
+Once extracted, access your animations using the `anim` parameter:
+```
+GET /?anim=animation1&minframe=1&maxframe=10
+GET /?anim=animation2&amount=1
+```
+
+## Important Notes
+
+- Video frame extraction happens during the build process only
+- Large videos may take several minutes to process
+- Each frame is resized to 64x40 pixels and extracted at 5 FPS
+- Frame extraction is lossless (PNG format with full color preservation)

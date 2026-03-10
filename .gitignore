@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Generated files - image frames (too large to commit)
+anims/*/images/*.png
+images/*.png
+
+# But keep the anims folder structure for reference
+!anims/.gitkeep
+!anims/*/.gitkeep
+!anims/*/images/.gitkeep
+
+# System files
+Thumbs.db
+.AppleDouble
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+npm-debug.log*

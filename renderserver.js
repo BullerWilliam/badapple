@@ -17,10 +17,13 @@ function startSelfPing() {
         
         setTimeout(() => {
             const randomFrame = Math.floor(Math.random() * 100) + 1;
+            
+            // Ping a default path - just hit the root
+            const pingPath = `/?minframe=1&maxframe=1`;
             const options = {
                 hostname: 'localhost',
                 port: PORT,
-                path: `/?minframe=${randomFrame}&maxframe=${randomFrame + 1}&anim=badapple`,
+                path: pingPath,
                 method: 'GET',
                 timeout: 5000
             };
@@ -31,7 +34,7 @@ function startSelfPing() {
                     data += chunk;
                 });
                 res.on('end', () => {
-                    console.log(`[PING] Self-ping successful at ${new Date().toISOString()}`);
+                    console.log(`[PING] Self-ping successful (${res.statusCode}) at ${new Date().toISOString()}`);
                 });
             });
 
@@ -73,6 +76,19 @@ app.get('/', async (req, res) => {
     const imagesDir = anim 
         ? path.join(__dirname, 'anims', anim, 'images')
         : path.join(__dirname, 'images');
+    
+    // Check if images directory exists
+    if (!fs.existsSync(imagesDir)) {
+        console.warn(`[WARN] Images directory not found: ${imagesDir}`);
+        if (!anim) {
+            return res.status(404).json({ 
+                error: 'No animations found. Please add videos to the "videos/" folder and rebuild, or use the "?anim=name" parameter to access a specific animation.',
+                hint: 'Available animations can be found in the "anims/" folder'
+            });
+        }
+        return res.status(404).json({ error: `Animation "${anim}" not found` });
+    }
+    
     const frames = [];
 
     for (let i = minframe; i <= maxframe; i++) {
@@ -95,8 +111,8 @@ app.get('/', async (req, res) => {
             frames.push(pixels);
             console.log(`Pushed frame ${i}`);
         } catch (err) {
-            console.error(`Error reading image ${i}.png:`, err);
-            // Skip or push null if needed
+            console.error(`Error reading image ${i}.png:`, err.message);
+            // Skip frames that don't exist
         }
     }
     res.json(frames);
@@ -104,7 +120,29 @@ app.get('/', async (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`[${new Date().toISOString()}] Server running on port ${PORT}`);
-    console.log(`[${new Date().toISOString()}] API: http://localhost:${PORT}?minframe=1&maxframe=10&anim=badapple`);
+    console.log(`[${new Date().toISOString()}] API: http://localhost:${PORT}?minframe=1&maxframe=10&anim=animationname`);
+    
+    // List available animations
+    const animsDir = path.join(__dirname, 'anims');
+    try {
+        if (fs.existsSync(animsDir)) {
+            const animations = fs.readdirSync(animsDir).filter(f => {
+                const stat = fs.statSync(path.join(animsDir, f));
+                return stat.isDirectory();
+            });
+            if (animations.length > 0) {
+                console.log(`[${new Date().toISOString()}] Available animations: ${animations.join(', ')}`);
+                console.log(`[${new Date().toISOString()}] Usage: http://localhost:${PORT}?minframe=1&maxframe=10&anim=${animations[0]}`);
+            } else {
+                console.log(`[${new Date().toISOString()}] No animations found. Add videos to the 'videos/' folder and rebuild.`);
+            }
+        } else {
+            console.log(`[${new Date().toISOString()}] No animations found. Add videos to the 'videos/' folder and rebuild.`);
+        }
+    } catch (err) {
+        console.log(`[${new Date().toISOString()}] Could not scan animations folder: ${err.message}`);
+    }
+    
     console.log(`[${new Date().toISOString()}] Starting self-ping to prevent server shutdown...`);
     startSelfPing();
 });

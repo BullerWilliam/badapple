@@ -1,0 +1,6 @@
+# This folder contains extracted animations from videos
+
+After building, each animation will have the following structure:
+- `{animation-name}/images/` - Contains numbered PNG frames (1.png, 2.png, etc.)
+
+The PNG files themselves are gitignored due to their large size and are regenerated during the build process.
