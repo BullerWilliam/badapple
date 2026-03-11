@@ -1,4 +1,9 @@
-#import cv2
+try:
+    import cv2
+except ImportError:
+    print("[ERROR] OpenCV (cv2) is not installed. Install it with 'pip install opencv-python'.")
+    sys.exit(1)
+
 import os
 import sys
 
