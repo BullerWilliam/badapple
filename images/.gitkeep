@@ -1,3 +1,0 @@
-# Default images folder - frames will be extracted here if no anim parameter is used
-# This folder serves as fallback when accessing /?minframe=1&maxframe=10 without ?anim parameter
-# Popular usage: extract default video frames into this folder, then access via API
